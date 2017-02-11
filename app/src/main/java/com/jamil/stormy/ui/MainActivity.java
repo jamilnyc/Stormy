@@ -1,12 +1,12 @@
 package com.jamil.stormy.ui;
 
 import android.Manifest;
-import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
+import android.location.Geocoder;
 import android.location.Location;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
@@ -31,6 +31,7 @@ import com.jamil.stormy.R;
 import com.jamil.stormy.weather.Current;
 import com.jamil.stormy.weather.Day;
 import com.jamil.stormy.weather.Forecast;
+import com.jamil.stormy.weather.ForecastLocation;
 import com.jamil.stormy.weather.Hour;
 
 import org.json.JSONArray;
@@ -60,10 +61,9 @@ public class MainActivity extends AppCompatActivity implements
     private static final int REQUEST_RESOLVE_ERROR = 123;
 
     private Forecast mForecast;
-    //private TextView mTemperatureLabel;
 
     GoogleApiClient mGoogleApiClient;
-    Location mLastLocation;
+    Location mLastLocation = null;
 
     private LocationRequest mLocationRequest;
 
@@ -73,24 +73,17 @@ public class MainActivity extends AppCompatActivity implements
      * ButterKnife Alternative to declaring a member variable for each layout view object
      * and then initializing in the onCreate() method.
      */
-    @BindView(R.id.timeLabel)
-    TextView mTimeLabel;
-    @BindView(R.id.temperatureLabel)
-    TextView mTemperatureLabel;
-    @BindView(R.id.humidityValue)
-    TextView mHumidityValue;
-    @BindView(R.id.precipValue)
-    TextView mPrecipValue;
-    @BindView(R.id.summaryLabel)
-    TextView mSummaryLabel;
-    @BindView(R.id.iconImageView)
-    ImageView mIconImageView;
-    @BindView(R.id.refreshImageView)
-    ImageView mRefreshImageView;
-    @BindView(R.id.progressBar)
-    ProgressBar mProgressBar;
+    @BindView(R.id.timeLabel) TextView mTimeLabel;
+    @BindView(R.id.temperatureLabel) TextView mTemperatureLabel;
+    @BindView(R.id.humidityValue) TextView mHumidityValue;
+    @BindView(R.id.precipValue) TextView mPrecipValue;
+    @BindView(R.id.summaryLabel) TextView mSummaryLabel;
+    @BindView(R.id.iconImageView) ImageView mIconImageView;
+    @BindView(R.id.refreshImageView) ImageView mRefreshImageView;
+    @BindView(R.id.progressBar) ProgressBar mProgressBar;
+    @BindView(R.id.locationLabel) TextView mLocationLabel;
 
-    // Default Location: New York City
+    // Default ForecastLocation: New York City
     private final double DEFAULT_LATITUDE = 40.7128;
     private final double DEFAULT_LONGITUDE = -74.0059;
 
@@ -108,6 +101,7 @@ public class MainActivity extends AppCompatActivity implements
         // Hide the loading circle initially
         mProgressBar.setVisibility(View.INVISIBLE);
 
+        // Listener for refresh icon
         mRefreshImageView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -116,7 +110,6 @@ public class MainActivity extends AppCompatActivity implements
             }
         });
 
-        // getForecast(latitude, longitude);
         Log.d(TAG, "Main UI code is running");
 
         mGoogleApiClient = new GoogleApiClient.Builder(this)
@@ -221,13 +214,17 @@ public class MainActivity extends AppCompatActivity implements
         Current current = mForecast.getCurrent();
         Log.d(TAG, "Updating the display now . . . ");
 
+        ForecastLocation forecastLocation = new ForecastLocation(mCurrentLatitude, mCurrentLongitude, this);
+
         // Update the Main layout with the data from the current weather conditions
         mTemperatureLabel.setText("" + current.getTemperature());
         mTimeLabel.setText("At " + current.getFormattedTime() + " it will be");
         mHumidityValue.setText("" + current.getHumidity());
         mPrecipValue.setText(current.getPrecipChance() + "%");
         mSummaryLabel.setText(current.getSummary());
+        mLocationLabel.setText(forecastLocation.getLocationName());
 
+        // TODO: remove deprecated function
         Drawable drawable = getResources().getDrawable(current.getIconId());
         mIconImageView.setImageDrawable(drawable);
     }
@@ -365,7 +362,7 @@ public class MainActivity extends AppCompatActivity implements
 
     @Override
     public void onConnected(@Nullable Bundle bundle) {
-        Log.i(TAG, "Location services connected.");
+        Log.i(TAG, "ForecastLocation services connected.");
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             Log.d(TAG, "Do not currently have permission");
             ActivityCompat.requestPermissions(
@@ -396,7 +393,7 @@ public class MainActivity extends AppCompatActivity implements
 
     @Override
     public void onConnectionSuspended(int i) {
-        Log.i(TAG, "Location services suspended. Please reconnect.");
+        Log.i(TAG, "ForecastLocation services suspended. Please reconnect.");
 
     }
 
@@ -404,9 +401,11 @@ public class MainActivity extends AppCompatActivity implements
     public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
         Log.d(TAG, "Connection failed");
         if (mResolvingError) {
+            Log.d(TAG, "Error in the process of being resolved");
             // Already attempting to resolve an error.
             return;
         } else if (connectionResult.hasResolution()) {
+            Log.d(TAG, "Error has no resolution");
             try {
                 mResolvingError = true;
                 connectionResult.startResolutionForResult(this, REQUEST_RESOLVE_ERROR);
@@ -415,9 +414,12 @@ public class MainActivity extends AppCompatActivity implements
                 mGoogleApiClient.connect();
             }
         } else {
+            Log.d(TAG, "Unsure about resolution");
             // Show dialog using GooglePlayServicesUtil.getErrorDialog()
             //showErrorDialog(connectionResult.getErrorCode());
             Log.d(TAG, "Error: " + connectionResult.getErrorMessage());
+            Log.d(TAG, "Error Code: " + connectionResult.getErrorCode());
+            Log.d(TAG, "Error Resolution: " + connectionResult.getResolution());
             mResolvingError = true;
         }
     }

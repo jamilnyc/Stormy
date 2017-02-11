@@ -8,4 +8,6 @@
     <string name="title_activity_daily_forecast">DailyForecastActivity</string>
     <string name="no_daily_forecast_data">There is no data to display.</string>
     <string name="title_activity_hourly_forecast">HourlyForecastActivity</string>
+    <string name="loading_text">Loading . . .</string>
+    <string name="at_current_location">At your current location</string>
 </resources>
