@@ -1,11 +1,19 @@
 package com.jamil.stormy.ui;
 
+import android.Manifest;
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentSender;
+import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
+import android.location.Location;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
@@ -14,6 +22,11 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.location.LocationListener;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationServices;
 import com.jamil.stormy.R;
 import com.jamil.stormy.weather.Current;
 import com.jamil.stormy.weather.Day;
@@ -35,26 +48,48 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements
+        GoogleApiClient.ConnectionCallbacks,
+        GoogleApiClient.OnConnectionFailedListener,
+        LocationListener {
     public static final String TAG = MainActivity.class.getSimpleName();
     public static final String DAILY_FORECAST = "DAILY_FORECAST";
     public static final String HOURLY_FORECAST = "HOURLY_FORECAST";
 
+    private static final int MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION = 1492;
+    private static final int REQUEST_RESOLVE_ERROR = 123;
+    private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
+
     private Forecast mForecast;
     //private TextView mTemperatureLabel;
+
+    GoogleApiClient mGoogleApiClient;
+    Location mLastLocation;
+
+    private LocationRequest mLocationRequest;
+
+    private boolean mResolvingError = false;
 
     /**
      * ButterKnife Alternative to declaring a member variable for each layout view object
      * and then initializing in the onCreate() method.
      */
-    @BindView(R.id.timeLabel) TextView mTimeLabel;
-    @BindView(R.id.temperatureLabel) TextView mTemperatureLabel;
-    @BindView(R.id.humidityValue) TextView mHumidityValue;
-    @BindView(R.id.precipValue) TextView mPrecipValue;
-    @BindView(R.id.summaryLabel) TextView mSummaryLabel;
-    @BindView(R.id.iconImageView) ImageView mIconImageView;
-    @BindView(R.id.refreshImageView) ImageView mRefreshImageView;
-    @BindView(R.id.progressBar) ProgressBar mProgressBar;
+    @BindView(R.id.timeLabel)
+    TextView mTimeLabel;
+    @BindView(R.id.temperatureLabel)
+    TextView mTemperatureLabel;
+    @BindView(R.id.humidityValue)
+    TextView mHumidityValue;
+    @BindView(R.id.precipValue)
+    TextView mPrecipValue;
+    @BindView(R.id.summaryLabel)
+    TextView mSummaryLabel;
+    @BindView(R.id.iconImageView)
+    ImageView mIconImageView;
+    @BindView(R.id.refreshImageView)
+    ImageView mRefreshImageView;
+    @BindView(R.id.progressBar)
+    ProgressBar mProgressBar;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -83,6 +118,21 @@ public class MainActivity extends AppCompatActivity {
 
         getForecast(latitude, longitude);
         Log.d(TAG, "Main UI code is running");
+
+
+
+        mGoogleApiClient = new GoogleApiClient.Builder(this)
+                .addConnectionCallbacks(this)
+                .addOnConnectionFailedListener(this)
+                .addApi(LocationServices.API)
+                .build();
+
+        Log.d(TAG, "Creating location request");
+        mLocationRequest = LocationRequest.create()
+                .setPriority(LocationRequest.PRIORITY_LOW_POWER)
+                .setInterval(10 * 1000)
+                .setFastestInterval(1 * 1000);
+
     } // OnCreate()
 
     private void getForecast(double latitude, double longitude) {
@@ -91,7 +141,7 @@ public class MainActivity extends AppCompatActivity {
         String forecastUrl = "https://api.darksky.net/forecast/"
                 + apiKey + "/" + latitude + "," + longitude;
 
-        if(isNetworkAvailable()) {
+        if (isNetworkAvailable()) {
             // Toggle the visibility of the refresh button
             toggleRefresh();
 
@@ -106,6 +156,7 @@ public class MainActivity extends AppCompatActivity {
             call.enqueue(new Callback() {
                 @Override
                 public void onFailure(Call call, IOException e) {
+                    Log.d(TAG, "Failed making request");
                     // Run UI updates on the main thread
                     runOnUiThread(new Runnable() {
                         @Override
@@ -139,6 +190,7 @@ public class MainActivity extends AppCompatActivity {
                                 }
                             });
                         } else {
+                            Log.d(TAG, "Response was not successful");
                             alertUserAboutError();
                         }
                     } catch (IOException e) {
@@ -272,8 +324,8 @@ public class MainActivity extends AppCompatActivity {
         return isAvailable;
     }
 
-    private void alertUserAboutError()
-    {
+    private void alertUserAboutError() {
+        Log.d(TAG, "About to send dialog to user");
         AlertDialogFragment dialog = new AlertDialogFragment();
         dialog.show(getFragmentManager(), "error_dialog");
     }
@@ -292,8 +344,111 @@ public class MainActivity extends AppCompatActivity {
     @OnClick(R.id.hourlyButton)
     public void startHourlyActivity(View view) {
         Log.d(TAG, "Starting Hourly Activity");
-        Intent intent =  new Intent(this, HourlyForecastActivity.class);
+        Intent intent = new Intent(this, HourlyForecastActivity.class);
         intent.putExtra(HOURLY_FORECAST, mForecast.getHourlyForecast());
         startActivity(intent);
+    }
+
+    protected void onResume()
+    {
+        super.onResume();
+        mGoogleApiClient.connect();
+    }
+
+    protected void onPause()
+    {
+        super.onPause();
+        if (mGoogleApiClient.isConnected()) {
+            LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
+            mGoogleApiClient.disconnect();
+        }
+    }
+
+    @Override
+    public void onConnected(@Nullable Bundle bundle) {
+        Log.i(TAG, "Location services connected.");
+
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG, "Do not currently have permission");
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+
+            ActivityCompat.requestPermissions(
+                    this,
+                    new String[] {Manifest.permission.ACCESS_COARSE_LOCATION},
+                    MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION
+            );
+
+            return;
+        }
+
+        Log.d(TAG, "The app has sufficient permissions. Great.");
+
+        // Permission granted, continue as usual
+        mLastLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+        if (mLastLocation != null) {
+            Log.d(TAG, mLastLocation.toString());
+            Log.d(TAG, "Latitude: " + mLastLocation.getLatitude());
+            Log.d(TAG, "Longitude: " + mLastLocation.getLongitude());
+        } else {
+            Log.d(TAG, "Last location is null! :-(");
+            Log.d(TAG, "Requesting an update");
+            LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
+        }
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {
+        Log.i(TAG, "Location services suspended. Please reconnect.");
+
+    }
+
+    @Override
+    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
+        Log.d(TAG, "Connection failed");
+        if (mResolvingError) {
+            // Already attempting to resolve an error.
+            return;
+        } else if (connectionResult.hasResolution()) {
+            try {
+                mResolvingError = true;
+                connectionResult.startResolutionForResult(this, REQUEST_RESOLVE_ERROR);
+            } catch (IntentSender.SendIntentException e) {
+                // There was an error with the resolution intent. Try again.
+                mGoogleApiClient.connect();
+            }
+        } else {
+            // Show dialog using GooglePlayServicesUtil.getErrorDialog()
+            //showErrorDialog(connectionResult.getErrorCode());
+            Log.d(TAG, "Error: " + connectionResult.getErrorMessage());
+            mResolvingError = true;
+        }
+    }
+
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults)
+    {
+        Log.d(TAG, "Request for permission granted");
+        if(requestCode == MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION) {
+            if (grantResults.length == 1 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                mLastLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+                if (mLastLocation != null) {
+                    Log.d(TAG, "Permission Granted.");
+                    Log.d(TAG, "Latitude: " + mLastLocation.getLatitude());
+                    Log.d(TAG, "Longitude: " + mLastLocation.getLongitude());
+                }
+            }
+        }
+    }
+
+    @Override
+    public void onLocationChanged(Location location) {
+        Log.d(TAG, "Received a new location");
+        Log.d(TAG, location.toString());
+        mLastLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
     }
 }
