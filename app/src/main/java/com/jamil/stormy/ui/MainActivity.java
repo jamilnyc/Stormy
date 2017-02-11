@@ -58,7 +58,6 @@ public class MainActivity extends AppCompatActivity implements
 
     private static final int MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION = 1492;
     private static final int REQUEST_RESOLVE_ERROR = 123;
-    private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
 
     private Forecast mForecast;
     //private TextView mTemperatureLabel;
@@ -91,6 +90,13 @@ public class MainActivity extends AppCompatActivity implements
     @BindView(R.id.progressBar)
     ProgressBar mProgressBar;
 
+    // Default Location: New York City
+    private final double DEFAULT_LATITUDE = 40.7128;
+    private final double DEFAULT_LONGITUDE = -74.0059;
+
+    private double mCurrentLatitude = DEFAULT_LATITUDE;
+    private double mCurrentLongitude = DEFAULT_LONGITUDE;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -102,24 +108,16 @@ public class MainActivity extends AppCompatActivity implements
         // Hide the loading circle initially
         mProgressBar.setVisibility(View.INVISIBLE);
 
-        // The fixed location we are interested in
-        final double latitude = 40.7474;
-        final double longitude = -73.8948;
-
-        //mTemperatureLabel = (TextView) findViewById(R.id.temperatureLabel)
-
         mRefreshImageView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 Log.d(TAG, "Refreshing info . . . ");
-                getForecast(latitude, longitude);
+                getForecast(mCurrentLatitude, mCurrentLongitude);
             }
         });
 
-        getForecast(latitude, longitude);
+        // getForecast(latitude, longitude);
         Log.d(TAG, "Main UI code is running");
-
-
 
         mGoogleApiClient = new GoogleApiClient.Builder(this)
                 .addConnectionCallbacks(this)
@@ -129,8 +127,8 @@ public class MainActivity extends AppCompatActivity implements
 
         Log.d(TAG, "Creating location request");
         mLocationRequest = LocationRequest.create()
-                .setPriority(LocationRequest.PRIORITY_LOW_POWER)
-                .setInterval(10 * 1000)
+                .setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
+                .setInterval(5 * 1000)
                 .setFastestInterval(1 * 1000);
 
     } // OnCreate()
@@ -141,6 +139,7 @@ public class MainActivity extends AppCompatActivity implements
         String forecastUrl = "https://api.darksky.net/forecast/"
                 + apiKey + "/" + latitude + "," + longitude;
 
+        Log.d(TAG, "Forecast URL: " + forecastUrl);
         if (isNetworkAvailable()) {
             // Toggle the visibility of the refresh button
             toggleRefresh();
@@ -367,23 +366,13 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     public void onConnected(@Nullable Bundle bundle) {
         Log.i(TAG, "Location services connected.");
-
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             Log.d(TAG, "Do not currently have permission");
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
-
             ActivityCompat.requestPermissions(
-                    this,
-                    new String[] {Manifest.permission.ACCESS_COARSE_LOCATION},
-                    MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION
+                this,
+                new String[] {Manifest.permission.ACCESS_FINE_LOCATION},
+                MY_PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION
             );
-
             return;
         }
 
@@ -393,8 +382,11 @@ public class MainActivity extends AppCompatActivity implements
         mLastLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
         if (mLastLocation != null) {
             Log.d(TAG, mLastLocation.toString());
+            mCurrentLatitude = mLastLocation.getLatitude();
+            mCurrentLongitude = mLastLocation.getLongitude();
             Log.d(TAG, "Latitude: " + mLastLocation.getLatitude());
             Log.d(TAG, "Longitude: " + mLastLocation.getLongitude());
+            getForecast(mCurrentLatitude, mCurrentLongitude);
         } else {
             Log.d(TAG, "Last location is null! :-(");
             Log.d(TAG, "Requesting an update");
@@ -430,6 +422,7 @@ public class MainActivity extends AppCompatActivity implements
         }
     }
 
+    // Called when user has decided on the location permission of the app
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults)
     {
         Log.d(TAG, "Request for permission granted");
@@ -438,8 +431,14 @@ public class MainActivity extends AppCompatActivity implements
                 mLastLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
                 if (mLastLocation != null) {
                     Log.d(TAG, "Permission Granted.");
+                    mCurrentLatitude = mLastLocation.getLatitude();
+                    mCurrentLongitude = mLastLocation.getLongitude();
                     Log.d(TAG, "Latitude: " + mLastLocation.getLatitude());
                     Log.d(TAG, "Longitude: " + mLastLocation.getLongitude());
+                    getForecast(mCurrentLatitude, mCurrentLongitude);
+                } else {
+                    // Permission denied, use default location
+                    getForecast(DEFAULT_LATITUDE, DEFAULT_LONGITUDE);
                 }
             }
         }
@@ -450,5 +449,10 @@ public class MainActivity extends AppCompatActivity implements
         Log.d(TAG, "Received a new location");
         Log.d(TAG, location.toString());
         mLastLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+        mCurrentLatitude = mLastLocation.getLatitude();
+        mCurrentLongitude = mLastLocation.getLongitude();
+        Log.d(TAG, "Latitude: " + mLastLocation.getLatitude());
+        Log.d(TAG, "Longitude: " + mLastLocation.getLongitude());
+        getForecast(mCurrentLatitude, mCurrentLongitude);
     }
 }
